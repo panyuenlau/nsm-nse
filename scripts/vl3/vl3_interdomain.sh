@@ -11,8 +11,11 @@ Options:
 " >&2
 }
 
-NSE_HUB=${NSE_HUB:-"ciscoappnetworking"}
-NSE_TAG=${NSE_TAG:-"master"}
+#NSE_HUB=${NSE_HUB:-"ciscoappnetworking"}
+#NSE_TAG=${NSE_TAG:-"master"}
+#PULLPOLICY=${PULLPOLICY:-IfNotPresent}
+NSE_HUB=${NSE_HUB:-"darrenlau1227"}
+NSE_TAG=${NSE_TAG:-"test"}
 PULLPOLICY=${PULLPOLICY:-IfNotPresent}
 INSTALL_OP=${INSTALL_OP:-apply}
 SERVICENAME=${SERVICENAME:-vl3-service}
@@ -62,6 +65,9 @@ for i in "$@"; do
         --hello)
             HELLO=true
             ;;
+        --pass-through)
+            PASS_THROUGH=true
+            ;;
         --nowait)
             NOWAIT=true
             ;;
@@ -109,7 +115,25 @@ else
     fi
 fi
 
-echo "---------------Install NSE-------------"
+if [[ "${PASS_THROUGH}" == "true" ]]; then
+  if [[ "$INSTALL_OP" != "delete" ]]; then
+    echo "---------------Install Pass-through NSE-------------"
+  else
+    echo "---------------Delete Pass-through NSE-------------"
+  fi
+  helm template ${VL3HELMDIR}/pass-through --set org=${NSE_HUB} --set tag=${NSE_TAG} --set pullPolicy=${PULLPOLICY} --set nsm.serviceName=${SERVICENAME} --set replicaCount=${NSEREPLICAS} --namespace=${NAMESPACE} | kubectl ${INSTALL_OP} ${KCONF:+--kubeconfig $KCONF} -f -
+
+  if [[ "$INSTALL_OP" != "delete" ]]; then
+    sleep 20
+    kubectl wait ${KCONF:+--kubeconfig $KCONF} --namespace=${NAMESPACE} --timeout=150s --for condition=Ready -l networkservicemesh.io/app=pass-through-nse-${SERVICENAME} pod
+  fi
+fi
+
+if [[ "$INSTALL_OP" != "delete" ]]; then
+  echo "---------------Install VL3 NSE-------------"
+else
+  echo "---------------Delete VL3 NSE-------------"
+fi
 # ${KUBEINSTALL} -f ${VL3_NSEMFST}
 helm template ${VL3HELMDIR}/vl3 --set org=${NSE_HUB} --set tag=${NSE_TAG} --set pullPolicy=${PULLPOLICY} --set nsm.serviceName=${SERVICENAME} ${IPAMPOOL:+ --set nseControl.ipam.defaultPrefixPool=${IPAMPOOL}} --set nseControl.nsr.addr=${WCM_NSRADDR} ${WCM_NSRPORT:+ --set nseControl.nsr.port=${WCM_NSRPORT}} --set replicaCount=${NSEREPLICAS} ${IPAMOCTET:+--set ipamUniqueOctet=${IPAMOCTET}} --namespace=${NAMESPACE} ${NAMESERVER:+ --set nseControl.nameserver=${NAMESERVER}} ${DNSZONE:+ --set nseControl.dnszone=${DNSZONE}} | kubectl ${INSTALL_OP} ${KCONF:+--kubeconfig $KCONF} -f -
 
@@ -119,7 +143,11 @@ if [[ "$INSTALL_OP" != "delete" ]]; then
 fi
 
 if [[ "${HELLO}" == "true" ]]; then
-    echo "---------------Install hello-------------"
+    if [[ "$INSTALL_OP" != "delete" ]]; then
+      echo "---------------Install hello-------------"
+    else
+      echo "---------------Delete hello-------------"
+    fi
     #${KUBEINSTALL} -f ${MFSTDIR}/vl3-hello.yaml
     ${KUBEINSTALL} -f ${MFSTDIR}/vl3-hello-kali.yaml
 
